@@ -106,12 +106,12 @@ function generateSpecularMap(w, h, radius, bezelWidth, angle) {
   return c.toDataURL();
 }
 
-function buildFilter(defsId, filterId, w, h, radius, clampedBezel, glassThick, ior, scaleRatio, blurAmt, specOpacity, specSat, surfaceKey) {
+function buildFilter(defsId, filterId, w, h, radius, clampedBezel, glassThick, ior, scaleRatio, blurAmt, specOpacity, specSat, surfaceKey, specAngle) {
   const heightFn = SURFACE_FNS[surfaceKey || 'convex_squircle'];
   const profile = calculateRefractionProfile(glassThick, clampedBezel, heightFn, ior, 128);
   const maxDisp = Math.max(...Array.from(profile).map(Math.abs)) || 1;
   const dispUrl = generateDisplacementMap(w, h, radius, clampedBezel, profile, maxDisp);
-  const specUrl = generateSpecularMap(w, h, radius, clampedBezel * 2.5);
+  const specUrl = generateSpecularMap(w, h, radius, clampedBezel * 2.5, specAngle);
   const scale = maxDisp * scaleRatio;
   document.getElementById(defsId).innerHTML = `
     <filter id="${filterId}" x="0%" y="0%" width="100%" height="100%">
@@ -191,10 +191,7 @@ let filterTimer;
 let rebuildGenerateFilter = null;
 function scheduleRebuild() {
   clearTimeout(filterTimer);
-  filterTimer = setTimeout(() => {
-    rebuildFilter();
-    if (rebuildGenerateFilter) rebuildGenerateFilter();
-  }, 30);
+  filterTimer = setTimeout(() => { rebuildFilter(); if (rebuildGenerateFilter) rebuildGenerateFilter(); }, 30);
 }
 
 FILTER_CTRLS.forEach(([id, fmt]) => {
@@ -307,34 +304,55 @@ glass.style.top  = innerHeight / 2 - 100 + 'px';
   }
 }
 
-// ── Generate button glass (same params as archisvaze glass panel) ────────────
+// ── Generate button: SVG physics-filter glass ────────────────────────────────
 {
-  function buildGenerateFilter(btn) {
-    const w = btn.offsetWidth, h = btn.offsetHeight;
-    if (w < 2 || h < 2) return;
-    const minDim = Math.min(w, h);
-    const radius = Math.round(h / 2);
-    // Same proportional bezel as archisvaze (60px bezel on 200px min-dim ≈ 30%)
-    const bezelW = Math.round(minDim * 0.30);
-    const clampedBezel = Math.min(bezelW, radius - 1, minDim / 2 - 1);
-    // Read all appearance params from the shared controls panel
-    const glassT     = +document.getElementById('glass-thickness').value;
-    const ior        = +document.getElementById('refractive-index').value;
-    const scaleRatio = +document.getElementById('scale-ratio').value;
-    const blurAmt    = +document.getElementById('blur-amount').value;
-    const specOp     = +document.getElementById('specular-opacity').value;
-    const specSat    = +document.getElementById('specular-saturation').value;
-    const surface    = document.getElementById('surface-fn').value;
-    buildFilter('btn-defs', 'btn-glass-filter', w, h, radius, clampedBezel, glassT, ior, scaleRatio, blurAmt, specOp, specSat, surface);
-  }
-
   const isChrome = navigator.userAgentData
     ? navigator.userAgentData.brands.some(b => b.brand === 'Google Chrome')
     : /Chrome\//.test(navigator.userAgent) && !/Edg\//.test(navigator.userAgent);
   if (isChrome) {
     const btn = document.querySelector('.button-wrap button');
     btn.classList.add('glass-main');
-    rebuildGenerateFilter = () => buildGenerateFilter(btn);
+
+    const BASE_ANGLE = Math.PI / 3;
+    let specAngle = BASE_ANGLE;
+    let animId = null;
+
+    function buildGenerateFilter(angle) {
+      const w = btn.offsetWidth, h = btn.offsetHeight;
+      if (w < 2 || h < 2) return;
+      const minDim = Math.min(w, h);
+      const radius = Math.round(h / 2);
+      const clampedBezel = Math.min(radius - 1, minDim / 2 - 1);
+      const glassT     = +document.getElementById('glass-thickness').value;
+      const ior        = +document.getElementById('refractive-index').value;
+      const scaleRatio = +document.getElementById('scale-ratio').value;
+      const blurAmt    = +document.getElementById('blur-amount').value;
+      const specOp     = +document.getElementById('specular-opacity').value;
+      const specSat    = +document.getElementById('specular-saturation').value;
+      const surface    = document.getElementById('surface-fn').value;
+      buildFilter('btn-defs', 'btn-glass-filter', w, h, radius, clampedBezel, glassT, ior, scaleRatio, blurAmt, specOp, specSat, surface, angle ?? specAngle);
+    }
+
+    function animateTo(target, duration) {
+      cancelAnimationFrame(animId);
+      const start = specAngle;
+      const diff = target - start;
+      let t0 = null;
+      function tick(ts) {
+        if (!t0) t0 = ts;
+        const t = Math.min((ts - t0) / duration, 1);
+        const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+        specAngle = start + diff * ease;
+        buildGenerateFilter(specAngle);
+        if (t < 1) animId = requestAnimationFrame(tick);
+      }
+      animId = requestAnimationFrame(tick);
+    }
+
+    btn.addEventListener('mouseenter', () => animateTo(BASE_ANGLE - Math.PI / 2, 600));
+    btn.addEventListener('mouseleave', () => animateTo(BASE_ANGLE, 400));
+
+    rebuildGenerateFilter = () => buildGenerateFilter();
     new ResizeObserver(rebuildGenerateFilter).observe(btn);
   }
 }

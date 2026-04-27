@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>Glass Button</title>
+  <style>
+    @property --angle-1 {
+      syntax: "<angle>";
+      inherits: false;
+      initial-value: -75deg;
+    }
+    @property --angle-2 {
+      syntax: "<angle>";
+      inherits: false;
+      initial-value: -45deg;
+    }
+
+    :root {
+      --anim--hover-time: 400ms;
+      --anim--hover-ease: cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+      /* Replace this background with your own */
+      background: url('https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=2000&auto=format&fit=crop') center/cover no-repeat;
+      color: #fff;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Button wrap ────────────────────────────────────────────────────── */
+    .button-wrap {
+      font-size: clamp(1rem, 1.8vw, 1.5rem);
+      border-radius: 999vw;
+      background: transparent;
+      transition: all var(--anim--hover-time) var(--anim--hover-ease);
+    }
+
+    .button-shadow {
+      --shadow-cuttoff-fix: 2em;
+      position: absolute;
+      width: calc(100% + var(--shadow-cuttoff-fix));
+      height: calc(100% + var(--shadow-cuttoff-fix));
+      top: calc(0% - var(--shadow-cuttoff-fix) / 2);
+      left: calc(0% - var(--shadow-cuttoff-fix) / 2);
+      filter: blur(clamp(2px, 0.125em, 12px));
+      overflow: visible;
+      pointer-events: none;
+    }
+    .button-shadow::after {
+      content: "";
+      position: absolute; z-index: 0; inset: 0;
+      border-radius: 999vw;
+      background: linear-gradient(180deg, rgba(0,0,0,.2), rgba(0,0,0,.1));
+      width: calc(100% - var(--shadow-cuttoff-fix) - 0.25em);
+      height: calc(100% - var(--shadow-cuttoff-fix) - 0.25em);
+      top: calc(var(--shadow-cuttoff-fix) - 0.5em);
+      left: calc(var(--shadow-cuttoff-fix) - 0.875em);
+      padding: 0.125em;
+      mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite: exclude;
+      transition: all var(--anim--hover-time) var(--anim--hover-ease);
+      opacity: 1;
+    }
+
+    .button-wrap button {
+      --border-width: clamp(1px, 0.0625em, 4px);
+      all: unset;
+      cursor: pointer;
+      position: relative;
+      -webkit-tap-highlight-color: rgba(0,0,0,0);
+      z-index: 3;
+      border-radius: 999vw;
+      transition: all var(--anim--hover-time) var(--anim--hover-ease);
+    }
+    .button-wrap button:hover { transform: scale(0.975); }
+
+    .button-wrap button span {
+      position: relative; display: block;
+      user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      letter-spacing: -0.05em; font-weight: 500; font-size: 1em;
+      color: rgba(255,255,255,.9);
+      -webkit-font-smoothing: antialiased;
+      text-shadow: 0em 0.15em 0.05em rgba(0,0,0,.25);
+      transition: all var(--anim--hover-time) var(--anim--hover-ease);
+      padding-inline: 1.5em; padding-block: 0.875em;
+    }
+    .button-wrap button:hover span {
+      text-shadow: 0.025em 0.025em 0.025em rgba(0,0,0,.12);
+    }
+
+    .button-wrap button span::after {
+      content: "";
+      display: block; position: absolute; z-index: 1;
+      width: calc(100% - var(--border-width));
+      height: calc(100% - var(--border-width));
+      top: calc(0% + var(--border-width) / 2);
+      left: calc(0% + var(--border-width) / 2);
+      border-radius: 999vw; overflow: clip;
+      background: linear-gradient(
+        var(--angle-2),
+        rgba(255,255,255,0) 0%,
+        rgba(255,255,255,.5) 40% 50%,
+        rgba(255,255,255,0) 55%
+      );
+      mix-blend-mode: screen;
+      pointer-events: none;
+      background-size: 200% 200%;
+      background-position: 0% 50%;
+      background-repeat: no-repeat;
+      opacity: 0.15;
+      transition:
+        background-position calc(var(--anim--hover-time) * 1.25) var(--anim--hover-ease),
+        --angle-2 calc(var(--anim--hover-time) * 1.25) var(--anim--hover-ease);
+    }
+    .button-wrap button:hover span::after { background-position: 25% 50%; }
+    .button-wrap button:active span::after { background-position: 50% 15%; --angle-2: -15deg; }
+
+    .button-wrap:has(button:hover) .button-shadow {
+      filter: blur(clamp(2px, 0.0625em, 6px));
+      transition: filter var(--anim--hover-time) var(--anim--hover-ease);
+    }
+    .button-wrap:has(button:hover) .button-shadow::after {
+      top: calc(var(--shadow-cuttoff-fix) - 0.875em);
+    }
+    .button-wrap:has(button:active) { transform: rotate3d(1, 0, 0, 25deg); }
+    .button-wrap:has(button:active) .button-shadow {
+      filter: blur(clamp(2px, 0.125em, 12px));
+    }
+    .button-wrap:has(button:active) .button-shadow::after {
+      top: calc(var(--shadow-cuttoff-fix) - 0.5em);
+      opacity: 0.75;
+    }
+    .button-wrap:has(button:active) span {
+      text-shadow: 0.025em 0.25em 0.05em rgba(0,0,0,.12);
+    }
+
+    /* ── SVG glass filter override (Chrome only) ────────────────────────── */
+    .button-wrap button.glass-main {
+      background: rgba(255,255,255,0.05);
+      backdrop-filter: url(#btn-glass-filter);
+      -webkit-backdrop-filter: url(#btn-glass-filter);
+      box-shadow: none;
+    }
+    .button-wrap button.glass-main:hover {
+      background: rgba(255,255,255,0.05);
+      backdrop-filter: url(#btn-glass-filter);
+      -webkit-backdrop-filter: url(#btn-glass-filter);
+      box-shadow: none;
+    }
+    .button-wrap button.glass-main::after { display: none; }
+
+    @media (hover: none) and (pointer: coarse) {
+      .button-wrap button span::after,
+      .button-wrap button:active span::after { --angle-2: -45deg; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Button -->
+  <div class="button-wrap">
+    <button>
+      <span>Generate</span>
+    </button>
+    <div class="button-shadow"></div>
+  </div>
+
+  <!-- SVG filter defs -->
+  <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute;overflow:hidden" color-interpolation-filters="sRGB">
+    <defs id="btn-defs"></defs>
+  </svg>
+
+  <script>
+    // ── Physics ───────────────────────────────────────────────────────────────
+    const SURFACE_FNS = {
+      convex_squircle: (x) => Math.pow(1 - Math.pow(1 - x, 4), 0.25),
+      convex_circle:   (x) => Math.sqrt(1 - (1 - x) * (1 - x)),
+      concave:         (x) => 1 - Math.sqrt(1 - (1 - x) * (1 - x)),
+      lip: (x) => {
+        const convex  = Math.pow(1 - Math.pow(1 - Math.min(x * 2, 1), 4), 0.25);
+        const concave = 1 - Math.sqrt(1 - (1 - x) * (1 - x)) + 0.1;
+        const t = 6*x**5 - 15*x**4 + 10*x**3;
+        return convex * (1 - t) + concave * t;
+      },
+    };
+
+    function calculateRefractionProfile(glassThickness, bezelWidth, heightFn, ior, samples) {
+      samples = samples || 128;
+      const eta = 1 / ior;
+      function refract(nx, ny) {
+        const dot = ny, k = 1 - eta*eta*(1 - dot*dot);
+        if (k < 0) return null;
+        const sq = Math.sqrt(k);
+        return [-(eta*dot + sq)*nx, eta - (eta*dot + sq)*ny];
+      }
+      const profile = new Float64Array(samples);
+      for (let i = 0; i < samples; i++) {
+        const x = i / samples;
+        const y = heightFn(x);
+        const dx = x < 1 ? 0.0001 : -0.0001;
+        const y2 = heightFn(x + dx);
+        const deriv = (y2 - y) / dx;
+        const mag = Math.sqrt(deriv*deriv + 1);
+        const ref = refract(-deriv/mag, -1/mag);
+        if (!ref) { profile[i] = 0; continue; }
+        profile[i] = ref[0] * ((y * bezelWidth + glassThickness) / ref[1]);
+      }
+      return profile;
+    }
+
+    function generateDisplacementMap(w, h, radius, bezelWidth, profile, maxDisp) {
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      const img = ctx.createImageData(w, h);
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) { d[i]=128; d[i+1]=128; d[i+2]=0; d[i+3]=255; }
+      const r=radius, rSq=r*r, r1Sq=(r+1)**2;
+      const rBSq = Math.max(r - bezelWidth, 0)**2;
+      const wB=w-r*2, hB=h-r*2, S=profile.length;
+      for (let y1=0; y1<h; y1++) {
+        for (let x1=0; x1<w; x1++) {
+          const x = x1<r ? x1-r : x1>=w-r ? x1-r-wB : 0;
+          const y = y1<r ? y1-r : y1>=h-r ? y1-r-hB : 0;
+          const dSq = x*x + y*y;
+          if (dSq>r1Sq || dSq<rBSq) continue;
+          const dist = Math.sqrt(dSq);
+          const fromSide = r - dist;
+          const op = dSq<rSq ? 1 : 1-(dist-Math.sqrt(rSq))/(Math.sqrt(r1Sq)-Math.sqrt(rSq));
+          if (op<=0 || dist===0) continue;
+          const cos=x/dist, sin=y/dist;
+          const bi = Math.min(((fromSide/bezelWidth)*S)|0, S-1);
+          const disp = profile[bi] || 0;
+          const dX=(-cos*disp)/maxDisp, dY=(-sin*disp)/maxDisp;
+          const idx=(y1*w+x1)*4;
+          d[idx]   = (128 + dX*127*op + 0.5)|0;
+          d[idx+1] = (128 + dY*127*op + 0.5)|0;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      return c.toDataURL();
+    }
+
+    function generateSpecularMap(w, h, radius, bezelWidth, angle) {
+      angle = angle != null ? angle : Math.PI/3;
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      const img = ctx.createImageData(w, h);
+      const d = img.data;
+      d.fill(0);
+      const r=radius, rSq=r*r, r1Sq=(r+1)**2;
+      const rBSq = Math.max(r - bezelWidth, 0)**2;
+      const wB=w-r*2, hB=h-r*2;
+      const sv=[Math.cos(angle), Math.sin(angle)];
+      for (let y1=0; y1<h; y1++) {
+        for (let x1=0; x1<w; x1++) {
+          const x = x1<r ? x1-r : x1>=w-r ? x1-r-wB : 0;
+          const y = y1<r ? y1-r : y1>=h-r ? y1-r-hB : 0;
+          const dSq = x*x + y*y;
+          if (dSq>r1Sq || dSq<rBSq) continue;
+          const dist = Math.sqrt(dSq);
+          const fromSide = r - dist;
+          const op = dSq<rSq ? 1 : 1-(dist-Math.sqrt(rSq))/(Math.sqrt(r1Sq)-Math.sqrt(rSq));
+          if (op<=0 || dist===0) continue;
+          const cos=x/dist, sin=-y/dist;
+          const dot = Math.abs(cos*sv[0] + sin*sv[1]);
+          const edge = Math.sqrt(Math.max(0, 1-(1-fromSide)**2));
+          const coeff = dot * edge;
+          const col = (255*coeff)|0;
+          const alpha = (col*coeff*op)|0;
+          const idx=(y1*w+x1)*4;
+          d[idx]=col; d[idx+1]=col; d[idx+2]=col; d[idx+3]=alpha;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      return c.toDataURL();
+    }
+
+    function buildFilter(defsId, filterId, w, h, radius, clampedBezel, glassThick, ior, scaleRatio, blurAmt, specOpacity, specSat, surfaceKey, specAngle) {
+      const heightFn = SURFACE_FNS[surfaceKey || 'convex_squircle'];
+      const profile = calculateRefractionProfile(glassThick, clampedBezel, heightFn, ior, 128);
+      const maxDisp = Math.max(...Array.from(profile).map(Math.abs)) || 1;
+      const dispUrl = generateDisplacementMap(w, h, radius, clampedBezel, profile, maxDisp);
+      const specUrl = generateSpecularMap(w, h, radius, clampedBezel * 2.5, specAngle);
+      const scale = maxDisp * scaleRatio;
+      document.getElementById(defsId).innerHTML = `
+        <filter id="${filterId}" x="0%" y="0%" width="100%" height="100%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="${blurAmt}" result="blurred_source"/>
+          <feImage href="${dispUrl}" x="0" y="0" width="${w}" height="${h}" result="disp_map"/>
+          <feDisplacementMap in="blurred_source" in2="disp_map"
+            scale="${scale}" xChannelSelector="R" yChannelSelector="G" result="displaced"/>
+          <feColorMatrix in="displaced" type="saturate" values="${specSat}" result="displaced_sat"/>
+          <feImage href="${specUrl}" x="0" y="0" width="${w}" height="${h}" result="spec_layer"/>
+          <feComposite in="displaced_sat" in2="spec_layer" operator="in" result="spec_masked"/>
+          <feComponentTransfer in="spec_layer" result="spec_faded">
+            <feFuncA type="linear" slope="${specOpacity}"/>
+          </feComponentTransfer>
+          <feBlend in="spec_masked" in2="displaced" mode="normal" result="with_sat"/>
+          <feBlend in="spec_faded" in2="with_sat" mode="normal"/>
+        </filter>`;
+    }
+
+    // ── Button glass filter + hover animation ─────────────────────────────────
+    // Config — tweak these to taste
+    const CONFIG = {
+      glassThickness: 80,
+      bezelWidth:     60,
+      ior:            3.0,
+      scaleRatio:     1.0,
+      blur:           0.3,
+      specOpacity:    0.5,
+      specSat:        4,
+      surface:        'convex_squircle',
+    };
+
+    const isChrome = navigator.userAgentData
+      ? navigator.userAgentData.brands.some(b => b.brand === 'Google Chrome')
+      : /Chrome\//.test(navigator.userAgent) && !/Edg\//.test(navigator.userAgent);
+
+    if (isChrome) {
+      const btn = document.querySelector('.button-wrap button');
+      btn.classList.add('glass-main');
+
+      const BASE_ANGLE = Math.PI / 3;
+      let specAngle = BASE_ANGLE;
+      let animId = null;
+
+      function buildGlassFilter(angle) {
+        const w = btn.offsetWidth, h = btn.offsetHeight;
+        if (w < 2 || h < 2) return;
+        const minDim = Math.min(w, h);
+        const radius = Math.round(h / 2);
+        const clampedBezel = Math.min(radius - 1, minDim / 2 - 1);
+        buildFilter(
+          'btn-defs', 'btn-glass-filter',
+          w, h, radius, clampedBezel,
+          CONFIG.glassThickness, CONFIG.ior, CONFIG.scaleRatio,
+          CONFIG.blur, CONFIG.specOpacity, CONFIG.specSat,
+          CONFIG.surface, angle ?? specAngle
+        );
+      }
+
+      function animateTo(target, duration) {
+        cancelAnimationFrame(animId);
+        const start = specAngle;
+        const diff = target - start;
+        let t0 = null;
+        function tick(ts) {
+          if (!t0) t0 = ts;
+          const t = Math.min((ts - t0) / duration, 1);
+          const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+          specAngle = start + diff * ease;
+          buildGlassFilter(specAngle);
+          if (t < 1) animId = requestAnimationFrame(tick);
+        }
+        animId = requestAnimationFrame(tick);
+      }
+
+      btn.addEventListener('mouseenter', () => animateTo(BASE_ANGLE - Math.PI / 2, 600));
+      btn.addEventListener('mouseleave', () => animateTo(BASE_ANGLE, 400));
+
+      new ResizeObserver(() => buildGlassFilter()).observe(btn);
+      requestAnimationFrame(() => buildGlassFilter());
+    }
+  </script>
+</body>
+</html>

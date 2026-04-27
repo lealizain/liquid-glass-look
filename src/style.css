@@ -367,16 +367,24 @@ body {
   text-shadow: 0.025em 0.25em 0.05em rgba(0,0,0,.12);
 }
 
-/* ── Liquid-glass Generate button (Chrome only) ─────────────────────────── */
+/* ── Liquid-glass Generate button (Chrome only via .glass-main) ─────────── */
 .button-wrap button.glass-main {
   background: rgba(255,255,255,0.05);
   backdrop-filter: url(#btn-glass-filter);
   -webkit-backdrop-filter: url(#btn-glass-filter);
+  box-shadow: none;
 }
 .button-wrap button.glass-main:hover {
   background: rgba(255,255,255,0.05);
   backdrop-filter: url(#btn-glass-filter);
   -webkit-backdrop-filter: url(#btn-glass-filter);
+  box-shadow: none;
+}
+.button-wrap button.glass-main::after {
+  display: none;
+}
+.button-wrap button.glass-main span::after {
+  opacity: 0.15;
 }
 
 /* ── 4-pointed star catch-light ─────────────────────────────────────────── */
