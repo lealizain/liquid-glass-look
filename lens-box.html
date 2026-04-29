@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lens Box</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        background: url(background.png) center / cover no-repeat fixed;
+        overflow: hidden;
+        height: 100vh;
+      }
+
+      .shape {
+        position: fixed;
+        width: 12vw;
+        height: 12vw;
+        border-radius: 1.5vw;
+        cursor: grab;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      .shape.dragging { cursor: grabbing; }
+
+      #glass-canvas {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        pointer-events: none;
+        z-index: 9999;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="glass-canvas"></canvas>
+    <div class="shape"></div>
+
+    <script>
+      const canvas  = document.getElementById('glass-canvas');
+      const shapes  = Array.from(document.querySelectorAll('.shape'));
+      const gl      = canvas.getContext('webgl');
+      const dpr     = window.devicePixelRatio || 1;
+
+      /* ── Shaders ───────────────────────────────────────────── */
+      const VS = `
+        attribute vec2 a_pos;
+        attribute vec2 a_uv;
+        varying   vec2 v_uv;
+        void main(){
+          v_uv        = a_uv;
+          gl_Position = vec4(a_pos, 0.0, 1.0);
+        }`;
+
+      const FS = `
+        precision mediump float;
+        varying vec2  v_uv;
+        uniform sampler2D u_tex;
+        uniform vec2  u_res;        /* lens size in px (physical) */
+        uniform vec4  u_bounds;     /* x0, y0, w, h in texture UV [0-1] */
+        uniform float u_refraction;
+        uniform float u_bevelDepth;
+        uniform float u_bevelWidth;
+        uniform float u_radius;     /* border-radius in px (physical) */
+
+        float udRoundBox(vec2 p, vec2 b, float r){
+          return length(max(abs(p)-b+r,0.0))-r;
+        }
+
+        float edgeFactor(){
+          vec2 p_px   = (v_uv - 0.5) * u_res;
+          float d     = -udRoundBox(p_px, u_res*0.5, u_radius);
+          float bevel = u_bevelWidth * min(u_res.x, u_res.y);
+          return 1.0 - smoothstep(0.0, bevel, d);
+        }
+
+        void main(){
+          /* direction from lens centre (aspect-corrected) */
+          vec2 p = v_uv - 0.5;
+          p.x   *= u_res.x / u_res.y;
+
+          float edge        = edgeFactor();
+          float offsetAmt   = edge * u_refraction + pow(edge, 10.0) * u_bevelDepth;
+          float centreBlend = smoothstep(0.15, 0.45, length(p));
+          vec2  offset      = normalize(p) * offsetAmt * centreBlend;
+
+          /* map lens UV → texture UV (fixed background = viewport-relative) */
+          vec2 mapped = vec2(
+            u_bounds.x + v_uv.x * u_bounds.z,
+            u_bounds.y - v_uv.y * u_bounds.w   /* flip Y: tex Y=0 is bottom */
+          );
+          vec2 sampleUV = clamp(mapped + offset, 0.0, 1.0);
+
+          vec4 col = texture2D(u_tex, sampleUV);
+
+          /* rounded-rect mask */
+          vec2  p_px = (v_uv - 0.5) * u_res;
+          float mask = 1.0 - step(0.0, udRoundBox(p_px, u_res*0.5, u_radius));
+          col.a     *= mask;
+
+          gl_FragColor = col;
+        }`;
+
+      /* ── GL helpers ────────────────────────────────────────── */
+      function compileShader(type, src) {
+        const s = gl.createShader(type);
+        gl.shaderSource(s, src);
+        gl.compileShader(s);
+        return s;
+      }
+
+      const prog = gl.createProgram();
+      gl.attachShader(prog, compileShader(gl.VERTEX_SHADER,   VS));
+      gl.attachShader(prog, compileShader(gl.FRAGMENT_SHADER, FS));
+      gl.linkProgram(prog);
+      gl.useProgram(prog);
+
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+
+      const a_pos = gl.getAttribLocation(prog, 'a_pos');
+      const a_uv  = gl.getAttribLocation(prog, 'a_uv');
+      gl.enableVertexAttribArray(a_pos);
+      gl.enableVertexAttribArray(a_uv);
+      const STRIDE = 4 * Float32Array.BYTES_PER_ELEMENT;
+      gl.vertexAttribPointer(a_pos, 2, gl.FLOAT, false, STRIDE, 0);
+      gl.vertexAttribPointer(a_uv,  2, gl.FLOAT, false, STRIDE, 2 * Float32Array.BYTES_PER_ELEMENT);
+
+      const u = {
+        tex:        gl.getUniformLocation(prog, 'u_tex'),
+        res:        gl.getUniformLocation(prog, 'u_res'),
+        bounds:     gl.getUniformLocation(prog, 'u_bounds'),
+        refraction: gl.getUniformLocation(prog, 'u_refraction'),
+        bevelDepth: gl.getUniformLocation(prog, 'u_bevelDepth'),
+        bevelWidth: gl.getUniformLocation(prog, 'u_bevelWidth'),
+        radius:     gl.getUniformLocation(prog, 'u_radius'),
+      };
+
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.uniform1i(u.tex, 0);
+      gl.uniform1f(u.refraction, 0.06);
+      gl.uniform1f(u.bevelDepth, 0.15);
+      gl.uniform1f(u.bevelWidth, 0.12);
+
+      /* ── Canvas resize ─────────────────────────────────────── */
+      function resize() {
+        canvas.width  = window.innerWidth  * dpr;
+        canvas.height = window.innerHeight * dpr;
+        gl.viewport(0, 0, canvas.width, canvas.height);
+      }
+      window.addEventListener('resize', resize);
+
+      /* ── CSS background-size:cover metrics ────────────────── */
+      function coverMetrics() {
+        const W = window.innerWidth, H = window.innerHeight;
+        const iW = img.naturalWidth,  iH = img.naturalHeight;
+        const scale = Math.max(W / iW, H / iH);
+        const sW = iW * scale, sH = iH * scale;
+        const cropX = (sW - W) / 2;
+        const cropY = (sH - H) / 2;
+        return { sW, sH, cropX, cropY };
+      }
+
+      /* ── Render a single lens ──────────────────────────────── */
+      function renderLens(shape) {
+        const r  = shape.getBoundingClientRect();
+        const W  = window.innerWidth;
+        const H  = window.innerHeight;
+
+        const cx0 = (2 * r.left / W) - 1;
+        const cx1 = (2 * (r.left + r.width)  / W) - 1;
+        const cy0 = 1 - (2 * r.top / H);
+        const cy1 = 1 - (2 * (r.top + r.height) / H);
+
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+          cx0, cy0,  0, 0,
+          cx1, cy0,  1, 0,
+          cx0, cy1,  0, 1,
+          cx1, cy0,  1, 0,
+          cx1, cy1,  1, 1,
+          cx0, cy1,  0, 1,
+        ]), gl.DYNAMIC_DRAW);
+
+        const { sW, sH, cropX, cropY } = coverMetrics();
+        gl.uniform2f(u.res, r.width * dpr, r.height * dpr);
+        gl.uniform4f(u.bounds,
+          (r.left + cropX) / sW,
+          1 - (r.top  + cropY) / sH,
+          r.width  / sW,
+          r.height / sH
+        );
+
+        const br = parseFloat(getComputedStyle(shape).borderRadius) * dpr;
+        gl.uniform1f(u.radius, br);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      }
+
+      /* ── Render loop ───────────────────────────────────────── */
+      function render() {
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        shapes.forEach(renderLens);
+        requestAnimationFrame(render);
+      }
+
+      /* ── Drag ─────────────────────────────────────────────── */
+      const shape = document.querySelector('.shape');
+
+      shape.style.left = (window.innerWidth  / 2 - shape.offsetWidth  / 2) + 'px';
+      shape.style.top  = (window.innerHeight / 2 - shape.offsetHeight / 2) + 'px';
+
+      let dragging = false, ox = 0, oy = 0;
+
+      shape.addEventListener('mousedown', e => {
+        dragging = true;
+        const b = shape.getBoundingClientRect();
+        ox = e.clientX - b.left;
+        oy = e.clientY - b.top;
+        shape.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        shape.style.left = (e.clientX - ox) + 'px';
+        shape.style.top  = (e.clientY - oy) + 'px';
+      });
+
+      document.addEventListener('mouseup', () => {
+        dragging = false;
+        shape.classList.remove('dragging');
+      });
+
+      shape.addEventListener('touchstart', e => {
+        const t = e.touches[0];
+        dragging = true;
+        const b = shape.getBoundingClientRect();
+        ox = t.clientX - b.left;
+        oy = t.clientY - b.top;
+        e.preventDefault();
+      }, { passive: false });
+
+      document.addEventListener('touchmove', e => {
+        if (!dragging) return;
+        const t = e.touches[0];
+        shape.style.left = (t.clientX - ox) + 'px';
+        shape.style.top  = (t.clientY - oy) + 'px';
+      }, { passive: false });
+
+      document.addEventListener('touchend', () => { dragging = false; });
+
+      /* ── Load background.png as texture ────────────────────── */
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+      const img = new Image();
+      img.onload = () => {
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+        resize();
+        render();
+      };
+      img.src = 'background.png';
+    </script>
+  </body>
+</html>

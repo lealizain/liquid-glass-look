@@ -1,0 +1,191 @@
+/* ─────────────────────────────────────────────────────────────
+   Glass Button — extracted from glass-button.html
+   ───────────────────────────────────────────────────────────── */
+
+@property --angle-1 {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: -75deg;
+}
+@property --angle-2 {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: -45deg;
+}
+
+:root {
+  --anim--hover-time: 400ms;
+  --anim--hover-ease: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.button-wrap {
+  position: relative;
+  display: inline-flex;
+  border-radius: 999vw;
+  background: transparent;
+  transition: all var(--anim--hover-time) var(--anim--hover-ease);
+}
+
+.button-shadow {
+  --shadow-cuttoff-fix: 2em;
+  position: absolute;
+  width: calc(100% + var(--shadow-cuttoff-fix));
+  height: calc(100% + var(--shadow-cuttoff-fix));
+  top: calc(0% - var(--shadow-cuttoff-fix) / 2);
+  left: calc(0% - var(--shadow-cuttoff-fix) / 2);
+  filter: blur(clamp(2px, 0.125em, 12px));
+  overflow: visible;
+  pointer-events: none;
+}
+.button-shadow::after {
+  content: "";
+  position: absolute; z-index: 0; inset: 0;
+  border-radius: 999vw;
+  background: linear-gradient(180deg, rgba(0,0,0,.2), rgba(0,0,0,.1));
+  width: calc(100% - var(--shadow-cuttoff-fix) - 0.25em);
+  height: calc(100% - var(--shadow-cuttoff-fix) - 0.25em);
+  top: calc(var(--shadow-cuttoff-fix) - 0.5em);
+  left: calc(var(--shadow-cuttoff-fix) - 0.875em);
+  padding: 0.125em;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  transition: all var(--anim--hover-time) var(--anim--hover-ease);
+  opacity: 1;
+}
+
+.button-wrap button {
+  --border-width: clamp(1px, 0.0625em, 4px);
+  all: unset;
+  cursor: pointer;
+  position: relative;
+  -webkit-tap-highlight-color: rgba(0,0,0,0);
+  z-index: 3;
+  flex: 1;
+  border-radius: 999vw;
+  transition: all var(--anim--hover-time) var(--anim--hover-ease);
+}
+.button-wrap button:hover { transform: scale(0.975); }
+
+.button-wrap button > span {
+  position: relative; display: block;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: -0.05em; font-weight: 500; font-size: 1em;
+  color: rgba(255,255,255,.9);
+  -webkit-font-smoothing: antialiased;
+  text-shadow: 0em 0.15em 0.05em rgba(0,0,0,.25);
+  transition: all var(--anim--hover-time) var(--anim--hover-ease);
+  padding-inline: 2.25em; padding-block: 1.4em;
+}
+.button-wrap button:hover > span {
+  text-shadow: 0.025em 0.025em 0.025em rgba(0,0,0,.12);
+}
+
+.button-wrap button > span::after {
+  content: "";
+  display: block; position: absolute; z-index: 1;
+  width: calc(100% - var(--border-width));
+  height: calc(100% - var(--border-width));
+  top: calc(0% + var(--border-width) / 2);
+  left: calc(0% + var(--border-width) / 2);
+  border-radius: 999vw; overflow: clip;
+  background: linear-gradient(
+    var(--angle-2),
+    rgba(255,255,255,0) 0%,
+    rgba(255,255,255,.5) 40% 50%,
+    rgba(255,255,255,0) 55%
+  );
+  mix-blend-mode: screen;
+  pointer-events: none;
+  background-size: 200% 200%;
+  background-position: 0% 50%;
+  background-repeat: no-repeat;
+  opacity: 0.15;
+  transition:
+    background-position calc(var(--anim--hover-time) * 1.25) var(--anim--hover-ease),
+    --angle-2 calc(var(--anim--hover-time) * 1.25) var(--anim--hover-ease);
+}
+.button-wrap button:hover > span::after { background-position: 25% 50%; }
+.button-wrap button:active > span::after { background-position: 50% 15%; --angle-2: -15deg; }
+
+.button-wrap:has(button:hover) .button-shadow {
+  filter: blur(clamp(2px, 0.0625em, 6px));
+  transition: filter var(--anim--hover-time) var(--anim--hover-ease);
+}
+.button-wrap:has(button:hover) .button-shadow::after {
+  top: calc(var(--shadow-cuttoff-fix) - 0.875em);
+}
+.button-wrap:has(button:active) { transform: rotate3d(1, 0, 0, 25deg); }
+.button-wrap:has(button:active) .button-shadow { filter: blur(clamp(2px, 0.125em, 12px)); }
+.button-wrap:has(button:active) .button-shadow::after {
+  top: calc(var(--shadow-cuttoff-fix) - 0.5em);
+  opacity: 0.75;
+}
+.button-wrap:has(button:active) button > span {
+  text-shadow: 0.025em 0.25em 0.05em rgba(0,0,0,.12);
+}
+
+.button-wrap button.glass-main {
+  background: rgba(255,255,255,0.05);
+  box-shadow: none;
+}
+.button-wrap button.glass-main::after { display: none; }
+
+/* Compact variant — same visual size, larger font */
+.button-wrap.glass-sm button > span {
+  padding-inline: 1.5em;
+  padding-block: 0.42em;
+}
+
+/* Card variant — rounded rectangle instead of pill */
+.button-wrap.glass-card,
+.button-wrap.glass-card button,
+.button-wrap.glass-card .button-shadow::after {
+  border-radius: 12px;
+}
+.button-wrap.glass-card button > span::after {
+  border-radius: 10px;
+}
+
+/* Black-text variant for light page backgrounds — flat, less transparent */
+.button-wrap.glass-black button {
+  background: rgba(255,255,255,0.52);
+}
+.button-wrap.glass-black button.glass-main {
+  background: rgba(255,255,255,0.42);
+}
+.button-wrap.glass-black button > span {
+  color: #111;
+  text-shadow: none;
+}
+.button-wrap.glass-black button > span::after {
+  display: none;
+}
+.button-wrap.glass-black button:hover > span,
+.button-wrap.glass-black:has(button:active) button > span {
+  text-shadow: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .button-wrap button > span::after,
+  .button-wrap button:active > span::after { --angle-2: -45deg; }
+}
+
+/* Safari / Firefox: no SVG backdrop-filter, so boost the CSS specular highlight
+   to compensate for the missing lens refraction from the Chromium path.        */
+@supports not (backdrop-filter: url(#x)) {
+  /* Brighter, wider specular band on the glass face */
+  .button-wrap button > span::after {
+    opacity: 0.55;
+    background: linear-gradient(
+      var(--angle-2),
+      rgba(255,255,255,0)   0%,
+      rgba(255,255,255,.90) 32% 52%,
+      rgba(255,255,255,0)   68%
+    );
+  }
+  /* Restore specular on hover/active to stay consistent */
+  .button-wrap button:hover > span::after { background-position: 25% 50%; }
+  .button-wrap button:active > span::after { background-position: 50% 15%; --angle-2: -15deg; }
+}

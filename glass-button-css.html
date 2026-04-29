@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>Glass Button</title>
+  <style>
+    @property --rim-angle {
+      syntax: '<angle>';
+      inherits: false;
+      initial-value: 30deg;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: url('https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=2000&auto=format&fit=crop') center/cover no-repeat;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .glass-button-wrap {
+      position: relative;
+      border-radius: 999px;
+      transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    .glass-button-wrap:has(button:active) { transform: rotate3d(1, 0, 0, 20deg); }
+
+    /* ── Button base (works in Safari + Chrome) ─────────────────────────── */
+    .glass-button {
+      --rim-angle: 30deg;
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.875em 1.75em;
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: clamp(1rem, 1.8vw, 1.5rem);
+      font-weight: 500;
+      letter-spacing: -0.04em;
+      color: rgba(255, 255, 255, 0.9);
+      text-shadow: 0 0.1em 0.18em rgba(0, 0, 0, 0.3);
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      background: transparent;
+      box-shadow: none;
+      transition:
+        --rim-angle 0.6s cubic-bezier(0.25, 1, 0.5, 1),
+        transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    /* Subtle border only — no fill, no glow */
+    .glass-button::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      padding: 1px;
+      background: conic-gradient(
+        from var(--rim-angle) at 50% 50%,
+        rgba(255, 255, 255, 0.5)  0deg,
+        rgba(255, 255, 255, 0.08) 35deg,
+        rgba(255, 255, 255, 0)    60deg,
+        rgba(255, 255, 255, 0)   300deg,
+        rgba(255, 255, 255, 0.15) 340deg,
+        rgba(255, 255, 255, 0.5)  360deg
+      );
+      mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite: exclude;
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      pointer-events: none;
+    }
+
+    .glass-button:hover {
+      --rim-angle: 120deg;
+      transform: scale(0.975);
+    }
+    .glass-button:active {
+      transform: scale(0.96);
+    }
+
+    /* ── Chrome: SVG physics filter (refraction only, no blur/gloss) ────── */
+    .glass-button.svg-filter {
+      background: transparent;
+      backdrop-filter: url(#btn-glass-filter);
+      -webkit-backdrop-filter: url(#btn-glass-filter);
+      box-shadow: none;
+    }
+    .glass-button.svg-filter:hover {
+      background: transparent;
+      backdrop-filter: url(#btn-glass-filter);
+      -webkit-backdrop-filter: url(#btn-glass-filter);
+    }
+
+    @media (hover: none) and (pointer: coarse) {
+      .glass-button { --rim-angle: 30deg; }
+      .glass-button:hover { --rim-angle: 30deg; transform: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="glass-button-wrap">
+    <button class="glass-button">Generate</button>
+  </div>
+
+  <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute;overflow:hidden" color-interpolation-filters="sRGB">
+    <defs id="btn-defs"></defs>
+  </svg>
+
+  <script>
+    // ── Physics ───────────────────────────────────────────────────────────────
+    const SURFACE_FNS = {
+      convex_squircle: (x) => Math.pow(1 - Math.pow(1 - x, 4), 0.25),
+    };
+
+    function calculateRefractionProfile(glassThickness, bezelWidth, heightFn, ior, samples) {
+      samples = samples || 128;
+      const eta = 1 / ior;
+      function refract(nx, ny) {
+        const dot = ny, k = 1 - eta*eta*(1 - dot*dot);
+        if (k < 0) return null;
+        const sq = Math.sqrt(k);
+        return [-(eta*dot + sq)*nx, eta - (eta*dot + sq)*ny];
+      }
+      const profile = new Float64Array(samples);
+      for (let i = 0; i < samples; i++) {
+        const x = i / samples;
+        const y = heightFn(x);
+        const dx = x < 1 ? 0.0001 : -0.0001;
+        const deriv = (heightFn(x + dx) - y) / dx;
+        const mag = Math.sqrt(deriv*deriv + 1);
+        const ref = refract(-deriv/mag, -1/mag);
+        if (!ref) { profile[i] = 0; continue; }
+        profile[i] = ref[0] * ((y * bezelWidth + glassThickness) / ref[1]);
+      }
+      return profile;
+    }
+
+    function generateDisplacementMap(w, h, radius, bezelWidth, profile, maxDisp) {
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      const img = ctx.createImageData(w, h);
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) { d[i]=128; d[i+1]=128; d[i+2]=0; d[i+3]=255; }
+      const r=radius, rSq=r*r, r1Sq=(r+1)**2;
+      const rBSq = Math.max(r - bezelWidth, 0)**2;
+      const wB=w-r*2, hB=h-r*2, S=profile.length;
+      for (let y1=0; y1<h; y1++) {
+        for (let x1=0; x1<w; x1++) {
+          const x = x1<r ? x1-r : x1>=w-r ? x1-r-wB : 0;
+          const y = y1<r ? y1-r : y1>=h-r ? y1-r-hB : 0;
+          const dSq = x*x + y*y;
+          if (dSq>r1Sq || dSq<rBSq) continue;
+          const dist = Math.sqrt(dSq);
+          const fromSide = r - dist;
+          const op = dSq<rSq ? 1 : 1-(dist-Math.sqrt(rSq))/(Math.sqrt(r1Sq)-Math.sqrt(rSq));
+          if (op<=0 || dist===0) continue;
+          const cos=x/dist, sin=y/dist;
+          const bi = Math.min(((fromSide/bezelWidth)*S)|0, S-1);
+          const disp = profile[bi] || 0;
+          const dX=(-cos*disp)/maxDisp, dY=(-sin*disp)/maxDisp;
+          const idx=(y1*w+x1)*4;
+          d[idx]   = (128 + dX*127*op + 0.5)|0;
+          d[idx+1] = (128 + dY*127*op + 0.5)|0;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      return c.toDataURL();
+    }
+
+    function generateSpecularMap(w, h, radius, bezelWidth, angle) {
+      angle = angle != null ? angle : Math.PI/3;
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      const img = ctx.createImageData(w, h);
+      const d = img.data;
+      d.fill(0);
+      const r=radius, rSq=r*r, r1Sq=(r+1)**2;
+      const rBSq = Math.max(r - bezelWidth, 0)**2;
+      const wB=w-r*2, hB=h-r*2;
+      const sv=[Math.cos(angle), Math.sin(angle)];
+      for (let y1=0; y1<h; y1++) {
+        for (let x1=0; x1<w; x1++) {
+          const x = x1<r ? x1-r : x1>=w-r ? x1-r-wB : 0;
+          const y = y1<r ? y1-r : y1>=h-r ? y1-r-hB : 0;
+          const dSq = x*x + y*y;
+          if (dSq>r1Sq || dSq<rBSq) continue;
+          const dist = Math.sqrt(dSq);
+          const fromSide = r - dist;
+          const op = dSq<rSq ? 1 : 1-(dist-Math.sqrt(rSq))/(Math.sqrt(r1Sq)-Math.sqrt(rSq));
+          if (op<=0 || dist===0) continue;
+          const cos=x/dist, sin=-y/dist;
+          const dot = Math.abs(cos*sv[0] + sin*sv[1]);
+          const edge = Math.sqrt(Math.max(0, 1-(1-fromSide)**2));
+          const coeff = dot * edge;
+          const col = (255*coeff)|0;
+          const alpha = (col*coeff*op)|0;
+          const idx=(y1*w+x1)*4;
+          d[idx]=col; d[idx+1]=col; d[idx+2]=col; d[idx+3]=alpha;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      return c.toDataURL();
+    }
+
+    function buildFilter(w, h, radius, clampedBezel, specAngle) {
+      const glassThick = 80, ior = 3.0, scaleRatio = 1.0;
+      const blurAmt = 0, specOpacity = 0, specSat = 1;
+      const heightFn = SURFACE_FNS.convex_squircle;
+      const profile = calculateRefractionProfile(glassThick, clampedBezel, heightFn, ior, 128);
+      const maxDisp = Math.max(...Array.from(profile).map(Math.abs)) || 1;
+      const dispUrl = generateDisplacementMap(w, h, radius, clampedBezel, profile, maxDisp);
+      const specUrl = generateSpecularMap(w, h, radius, clampedBezel * 2.5, specAngle);
+      const scale = maxDisp * scaleRatio;
+      document.getElementById('btn-defs').innerHTML = `
+        <filter id="btn-glass-filter" x="0%" y="0%" width="100%" height="100%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="${blurAmt}" result="blurred_source"/>
+          <feImage href="${dispUrl}" x="0" y="0" width="${w}" height="${h}" result="disp_map"/>
+          <feDisplacementMap in="blurred_source" in2="disp_map"
+            scale="${scale}" xChannelSelector="R" yChannelSelector="G" result="displaced"/>
+          <feColorMatrix in="displaced" type="saturate" values="${specSat}" result="displaced_sat"/>
+          <feImage href="${specUrl}" x="0" y="0" width="${w}" height="${h}" result="spec_layer"/>
+          <feComposite in="displaced_sat" in2="spec_layer" operator="in" result="spec_masked"/>
+          <feComponentTransfer in="spec_layer" result="spec_faded">
+            <feFuncA type="linear" slope="${specOpacity}"/>
+          </feComponentTransfer>
+          <feBlend in="spec_masked" in2="displaced" mode="normal" result="with_sat"/>
+          <feBlend in="spec_faded" in2="with_sat" mode="normal"/>
+        </filter>`;
+    }
+
+    // ── Chrome: activate SVG physics filter + hover animation ─────────────────
+    const isChrome = navigator.userAgentData
+      ? navigator.userAgentData.brands.some(b => b.brand === 'Google Chrome')
+      : /Chrome\//.test(navigator.userAgent) && !/Edg\//.test(navigator.userAgent);
+
+    if (isChrome) {
+      const btn = document.querySelector('.glass-button');
+      btn.classList.add('svg-filter');
+
+      const BASE_ANGLE = Math.PI / 3;
+      let specAngle = BASE_ANGLE;
+      let animId = null;
+
+      function rebuild(angle) {
+        const w = btn.offsetWidth, h = btn.offsetHeight;
+        if (w < 2 || h < 2) return;
+        const minDim = Math.min(w, h);
+        const radius = Math.round(h / 2);
+        const clampedBezel = Math.min(radius - 1, minDim / 2 - 1);
+        buildFilter(w, h, radius, clampedBezel, angle ?? specAngle);
+      }
+
+      function animateTo(target, duration) {
+        cancelAnimationFrame(animId);
+        const start = specAngle;
+        const diff = target - start;
+        let t0 = null;
+        function tick(ts) {
+          if (!t0) t0 = ts;
+          const t = Math.min((ts - t0) / duration, 1);
+          const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+          specAngle = start + diff * ease;
+          rebuild(specAngle);
+          if (t < 1) animId = requestAnimationFrame(tick);
+        }
+        animId = requestAnimationFrame(tick);
+      }
+
+      btn.addEventListener('mouseenter', () => animateTo(BASE_ANGLE - Math.PI / 2, 600));
+      btn.addEventListener('mouseleave', () => animateTo(BASE_ANGLE, 400));
+
+      new ResizeObserver(() => rebuild()).observe(btn);
+      requestAnimationFrame(() => rebuild());
+    }
+
+    // ── Drag ─────────────────────────────────────────────────────────────────
+    const wrap = document.querySelector('.glass-button-wrap');
+    let cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+    wrap.style.cssText += `position:fixed;left:${cx}px;top:${cy}px;transform:translate(-50%,-50%);cursor:grab;`;
+
+    let pid = -1, sx = 0, sy = 0, scx = 0, scy = 0, dragging = false;
+    wrap.addEventListener('pointerdown', e => {
+      pid = e.pointerId; sx = e.clientX; sy = e.clientY; scx = cx; scy = cy; dragging = false;
+    });
+    wrap.addEventListener('pointermove', e => {
+      if (e.pointerId !== pid) return;
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      if (!dragging) {
+        if (Math.hypot(dx, dy) < 6) return;
+        dragging = true;
+        wrap.setPointerCapture(pid);
+        wrap.style.cursor = 'grabbing';
+      }
+      const hw = wrap.offsetWidth / 2, hh = wrap.offsetHeight / 2;
+      cx = Math.max(hw, Math.min(window.innerWidth  - hw, scx + dx));
+      cy = Math.max(hh, Math.min(window.innerHeight - hh, scy + dy));
+      wrap.style.left = cx + 'px';
+      wrap.style.top  = cy + 'px';
+    });
+    const onUp = e => {
+      if (e.pointerId !== pid) return;
+      pid = -1; dragging = false; wrap.style.cursor = 'grab';
+    };
+    wrap.addEventListener('pointerup', onUp);
+    wrap.addEventListener('pointercancel', onUp);
+  </script>
+
+</body>
+</html>

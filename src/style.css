@@ -185,6 +185,17 @@ body {
 }
 .bg-btn.reset:hover { background: rgba(138,124,247,.35); }
 
+/* ── Canvas glass buttons ───────────────────────────────────────────────── */
+.glass-btn {
+  position: fixed;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.28));
+  z-index: 30;
+}
+.glass-btn.dragging { cursor: grabbing; }
+
 /* ── Generate Button ────────────────────────────────────────────────────── */
 .button-wrap {
   position: fixed;

@@ -188,10 +188,9 @@ const CSS_CTRLS = [
 const REBUILD_ON_CSS = new Set(['glass-width', 'glass-height', 'border-radius']);
 
 let filterTimer;
-let rebuildGenerateFilter = null;
 function scheduleRebuild() {
   clearTimeout(filterTimer);
-  filterTimer = setTimeout(() => { rebuildFilter(); if (rebuildGenerateFilter) rebuildGenerateFilter(); }, 30);
+  filterTimer = setTimeout(rebuildFilter, 30);
 }
 
 FILTER_CTRLS.forEach(([id, fmt]) => {
@@ -259,9 +258,10 @@ glass.style.top  = innerHeight / 2 - 100 + 'px';
   const thumbEls = [];
 
   function applyBg(url) {
-    currentUrl = url;
     document.body.style.background = `url('${url}') center/cover no-repeat`;
     thumbEls.forEach(t => t.el.classList.toggle('active', t.url === url));
+    canvasBg.onload = () => allButtons.forEach(b => { b.buildDispMap(); b.render(); });
+    canvasBg.src = url;
   }
 
   const container = document.getElementById('bg-picker');
@@ -304,80 +304,255 @@ glass.style.top  = innerHeight / 2 - 100 + 'px';
   }
 }
 
-// ── Generate button: SVG physics-filter glass ────────────────────────────────
-{
-  const isChrome = navigator.userAgentData
-    ? navigator.userAgentData.brands.some(b => b.brand === 'Google Chrome')
-    : /Chrome\//.test(navigator.userAgent) && !/Edg\//.test(navigator.userAgent);
-  if (isChrome) {
-    const btn = document.querySelector('.button-wrap button');
-    btn.classList.add('glass-main');
+// ── Canvas glass buttons (works in all browsers including Safari) ─────────────
+const canvasBg = new Image();
+canvasBg.crossOrigin = 'anonymous';
 
-    const BASE_ANGLE = Math.PI / 3;
-    let specAngle = BASE_ANGLE;
-    let animId = null;
+const allButtons = [];
 
-    function buildGenerateFilter(angle) {
-      const w = btn.offsetWidth, h = btn.offsetHeight;
-      if (w < 2 || h < 2) return;
-      const minDim = Math.min(w, h);
-      const radius = Math.round(h / 2);
-      const clampedBezel = Math.min(radius - 1, minDim / 2 - 1);
-      const glassT     = +document.getElementById('glass-thickness').value;
-      const ior        = +document.getElementById('refractive-index').value;
-      const scaleRatio = +document.getElementById('scale-ratio').value;
-      const blurAmt    = +document.getElementById('blur-amount').value;
-      const specOp     = +document.getElementById('specular-opacity').value;
-      const specSat    = +document.getElementById('specular-saturation').value;
-      const surface    = document.getElementById('surface-fn').value;
-      buildFilter('btn-defs', 'btn-glass-filter', w, h, radius, clampedBezel, glassT, ior, scaleRatio, blurAmt, specOp, specSat, surface, angle ?? specAngle);
-    }
+function createButton(bgImg, { elementId, W, H, R, label, initX, initY }) {
+  const canvas = document.getElementById(elementId);
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
 
-    function animateTo(target, duration) {
-      cancelAnimationFrame(animId);
-      const start = specAngle;
-      const diff = target - start;
-      let t0 = null;
-      function tick(ts) {
-        if (!t0) t0 = ts;
-        const t = Math.min((ts - t0) / duration, 1);
-        const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
-        specAngle = start + diff * ease;
-        buildGenerateFilter(specAngle);
-        if (t < 1) animId = requestAnimationFrame(tick);
+  canvas.width        = W * dpr;
+  canvas.height       = H * dpr;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  canvas.style.left   = initX + 'px';
+  canvas.style.top    = initY + 'px';
+  ctx.scale(dpr, dpr);
+
+  let dispMap = null;
+  const edgeReflectDist = 8;
+
+  function buildDispMap() {
+    const PW = W * dpr, PH = H * dpr, PR = R * dpr;
+    const bezel   = Math.min(26 * dpr, PR - 1);
+    const S       = 128;
+    const profile = calculateRefractionProfile(200, bezel, SURFACE_FNS.convex_squircle, 3.0, S);
+    const maxD    = Math.max(...Array.from(profile).map(Math.abs)) || 1;
+    const SCALE   = 56 * dpr;
+    dispMap = new Float32Array(PW * PH * 2);
+    for (let py = 0; py < PH; py++) {
+      for (let px = 0; px < PW; px++) {
+        const cx       = Math.max(PR, Math.min(PW - PR, px));
+        const cy       = Math.max(PR, Math.min(PH - PR, py));
+        const dx       = px - cx, dy = py - cy;
+        const dist     = Math.sqrt(dx * dx + dy * dy);
+        const fromEdge = PR - dist;
+        if (fromEdge <= 0 || fromEdge > bezel || dist === 0) continue;
+        const bi   = Math.min((fromEdge / bezel * S) | 0, S - 1);
+        const disp = profile[bi] || 0;
+        const cos  = dx / dist, sin = dy / dist;
+        const mi = (py * PW + px) * 2;
+        dispMap[mi]     = -cos * disp / maxD * SCALE;
+        dispMap[mi + 1] = -sin * disp / maxD * SCALE;
       }
-      animId = requestAnimationFrame(tick);
     }
-
-    btn.addEventListener('mouseenter', () => animateTo(BASE_ANGLE - Math.PI / 2, 600));
-    btn.addEventListener('mouseleave', () => animateTo(BASE_ANGLE, 400));
-
-    rebuildGenerateFilter = () => buildGenerateFilter();
-    new ResizeObserver(rebuildGenerateFilter).observe(btn);
   }
+
+  function pillPath(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.lineTo(x + w - r, y);
+    c.arc(x + w - r, y + r,     r, -Math.PI / 2, 0);
+    c.lineTo(x + w, y + h - r);
+    c.arc(x + w - r, y + h - r, r, 0,            Math.PI / 2);
+    c.lineTo(x + r, y + h);
+    c.arc(x + r,     y + h - r, r, Math.PI / 2,  Math.PI);
+    c.lineTo(x, y + r);
+    c.arc(x + r,     y + r,     r, Math.PI,      -Math.PI / 2);
+    c.closePath();
+  }
+
+  function render(hoverT) {
+    if (!bgImg.complete || !bgImg.naturalWidth || !dispMap) return;
+    const rect  = canvas.getBoundingClientRect();
+    const vW    = innerWidth, vH = innerHeight;
+    const sc    = Math.max(vW / bgImg.naturalWidth, vH / bgImg.naturalHeight);
+    const cropX = (bgImg.naturalWidth  * sc - vW) / 2;
+    const cropY = (bgImg.naturalHeight * sc - vH) / 2;
+    const PW = W * dpr, PH = H * dpr;
+    const MAR    = 48;
+    const MAR_PX = Math.round(MAR * dpr);
+    const EW     = PW + 2 * MAR_PX;
+    const EH     = PH + 2 * MAR_PX;
+    const srcXe  = (rect.left - MAR + cropX) / sc;
+    const srcYe  = (rect.top  - MAR + cropY) / sc;
+    const srcWe  = (W + 2 * MAR) / sc;
+    const srcHe  = (H + 2 * MAR) / sc;
+    const tmp  = document.createElement('canvas');
+    tmp.width  = EW; tmp.height = EH;
+    const tCtx = tmp.getContext('2d');
+    tCtx.drawImage(bgImg, srcXe, srcYe, srcWe, srcHe, 0, 0, EW, EH);
+    const srcPx = tCtx.getImageData(0, 0, EW, EH).data;
+    const out  = document.createElement('canvas');
+    out.width  = PW; out.height = PH;
+    const oCtx = out.getContext('2d');
+    const imgD = oCtx.createImageData(PW, PH);
+    const dst  = imgD.data;
+    for (let py = 0; py < PH; py++) {
+      for (let px = 0; px < PW; px++) {
+        const PR  = R * dpr;
+        const cx  = Math.max(PR, Math.min(PW - PR, px));
+        const cy2 = Math.max(PR, Math.min(PH - PR, py));
+        const ddx = px - cx, ddy = py - cy2;
+        if (ddx * ddx + ddy * ddy > (PR + 0.5) * (PR + 0.5)) continue;
+        const mi = (py * PW + px) * 2;
+        const sx = Math.round(Math.max(0, Math.min(EW - 1, px + MAR_PX + dispMap[mi])));
+        const sy = Math.round(Math.max(0, Math.min(EH - 1, py + MAR_PX + dispMap[mi + 1])));
+        const si = (sy * EW + sx) * 4;
+        const di = (py * PW + px) * 4;
+        dst[di]     = srcPx[si];
+        dst[di + 1] = srcPx[si + 1];
+        dst[di + 2] = srcPx[si + 2];
+        dst[di + 3] = 255;
+        const ddist      = Math.sqrt(ddx * ddx + ddy * ddy);
+        const fromEdgePx = PR - ddist;
+        if (ddist > 0 && fromEdgePx >= 0 && fromEdgePx < edgeReflectDist * dpr) {
+          const reflT = 1.0 - fromEdgePx / (edgeReflectDist * dpr);
+          const ncx   = ddx / ddist, ncy = ddy / ddist;
+          const outX  = Math.round(Math.max(0, Math.min(EW - 1, cx  + ncx * (PR + 4 * dpr) + MAR_PX)));
+          const outY  = Math.round(Math.max(0, Math.min(EH - 1, cy2 + ncy * (PR + 4 * dpr) + MAR_PX)));
+          const rsi   = (outY * EW + outX) * 4;
+          const alpha = reflT * 0.85;
+          dst[di]     = dst[di]     * (1 - alpha) + srcPx[rsi]     * alpha;
+          dst[di + 1] = dst[di + 1] * (1 - alpha) + srcPx[rsi + 1] * alpha;
+          dst[di + 2] = dst[di + 2] * (1 - alpha) + srcPx[rsi + 2] * alpha;
+        }
+      }
+    }
+    oCtx.putImageData(imgD, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.save();
+    pillPath(ctx, 0, 0, W, H, R);
+    ctx.clip();
+    ctx.drawImage(out, 0, 0, PW, PH, 0, 0, W, H);
+    ctx.fillStyle = 'rgba(255,255,255,0.04)';
+    ctx.fillRect(0, 0, W, H);
+    const sAngle = 3 * Math.PI / 4 - hoverT * (Math.PI / 2);
+    const specC  = document.createElement('canvas');
+    specC.width  = PW; specC.height = PH;
+    const sCtx2  = specC.getContext('2d');
+    const sImgD  = sCtx2.createImageData(PW, PH);
+    const sd     = sImgD.data;
+    const PR_sp  = R * dpr;
+    const RIM    = 5 * dpr;
+    const halfW  = (PW - 2 * PR_sp) / 2;
+    const halfH  = (PH - 2 * PR_sp) / 2;
+    const cxBtn  = PW / 2, cyBtn = PH / 2;
+    for (let spy = 0; spy < PH; spy++) {
+      for (let spx = 0; spx < PW; spx++) {
+        const cxs = Math.max(PR_sp, Math.min(PW - PR_sp, spx));
+        const cys = Math.max(PR_sp, Math.min(PH - PR_sp, spy));
+        const dxs = spx - cxs, dys = spy - cys;
+        const dSq = dxs * dxs + dys * dys;
+        if (dSq < 1) continue;
+        const ds       = Math.sqrt(dSq);
+        const fromEdge = PR_sp - ds;
+        if (fromEdge < 0 || fromEdge > RIM) continue;
+        const t    = fromEdge / RIM;
+        const edge = Math.sqrt(Math.max(0, 1 - t * t));
+        const a   = Math.atan2(-(spy - cyBtn), spx - cxBtn);
+        const dot = Math.abs(Math.cos(a - sAngle));
+        let midFade = 1;
+        if (dxs === 0 && halfW > 0) {
+          const d = Math.min(spx - PR_sp, PW - PR_sp - spx) / halfW;
+          midFade = Math.max(0, 1 - d);
+        } else if (dys === 0 && halfH > 0) {
+          const d = Math.min(spy - PR_sp, PH - PR_sp - spy) / halfH;
+          midFade = Math.max(0, 1 - d);
+        }
+        const coeff = dot * edge * midFade;
+        const col   = (180 * coeff) | 0;
+        const si    = (spy * PW + spx) * 4;
+        sd[si] = col; sd[si+1] = col; sd[si+2] = col;
+        sd[si+3] = (col * coeff) | 0;
+      }
+    }
+    sCtx2.putImageData(sImgD, 0, 0);
+    ctx.save();
+    ctx.filter = 'blur(1px)';
+    ctx.drawImage(specC, 0, 0, PW, PH, 0, 0, W, H);
+    ctx.restore();
+    ctx.restore();
+    ctx.save();
+    pillPath(ctx, 0.5, 0.5, W - 1, H - 1, R - 0.5);
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth   = 1;
+    ctx.stroke();
+    ctx.restore();
+    ctx.save();
+    ctx.font          = `500 ${Math.round(H * 0.31)}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+    ctx.fillStyle     = 'rgba(255,255,255,0.92)';
+    ctx.textAlign     = 'center';
+    ctx.textBaseline  = 'middle';
+    ctx.shadowColor   = 'rgba(0,0,0,0.3)';
+    ctx.shadowOffsetY = 1.5;
+    ctx.shadowBlur    = 2;
+    ctx.fillText(label, W / 2, H / 2 + 0.5);
+    ctx.restore();
+  }
+
+  let hoverT = 0, animId = null;
+  function animateTo(target, dur) {
+    cancelAnimationFrame(animId);
+    const start = hoverT, diff = target - start;
+    let t0 = null;
+    (function tick(ts) {
+      if (!t0) t0 = ts;
+      const t = Math.min((ts - t0) / (dur || 400), 1);
+      hoverT = start + diff * (t < 0.5 ? 2*t*t : -1+(4-2*t)*t);
+      render(hoverT);
+      if (t < 1) animId = requestAnimationFrame(tick);
+    })(performance.now());
+  }
+
+  canvas.addEventListener('mouseenter', () => { if (!dragging) animateTo(1, 500); });
+  canvas.addEventListener('mouseleave', () => animateTo(0, 400));
+
+  let dragging = false, ox = 0, oy = 0;
+  canvas.addEventListener('mousedown', e => {
+    dragging = true;
+    const b = canvas.getBoundingClientRect();
+    ox = e.clientX - b.left; oy = e.clientY - b.top;
+    canvas.classList.add('dragging');
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    canvas.style.left = (e.clientX - ox) + 'px';
+    canvas.style.top  = (e.clientY - oy) + 'px';
+    render(hoverT);
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    canvas.classList.remove('dragging');
+  });
+
+  return { buildDispMap, render: () => render(hoverT) };
 }
 
-// ── Generate button drag ──────────────────────────────────────────────────────
+// Create buttons — positioned relative to viewport centre
 {
-  const el = document.querySelector('.button-wrap');
-  let cx = window.innerWidth * 0.5, cy = window.innerHeight * 0.6;
-  el.style.left = cx + 'px'; el.style.top = cy + 'px';
-  el.style.transform = 'translate(-50%, -50%)';
+  const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
 
-  let pid=-1, sx=0, sy=0, scx=0, scy=0, dragging=false;
-  el.addEventListener('pointerdown', e => {
-    pid=e.pointerId; sx=e.clientX; sy=e.clientY; scx=cx; scy=cy; dragging=false;
-  });
-  el.addEventListener('pointermove', e => {
-    if (e.pointerId!==pid) return;
-    const dx=e.clientX-sx, dy=e.clientY-sy;
-    if (!dragging) { if (Math.hypot(dx,dy)<6) return; dragging=true; el.setPointerCapture(pid); el.style.cursor='grabbing'; }
-    const HW=el.offsetWidth/2, HH=el.offsetHeight/2;
-    cx=Math.max(HW,Math.min(window.innerWidth-HW,scx+dx));
-    cy=Math.max(HH,Math.min(window.innerHeight-HH,scy+dy));
-    el.style.left=cx+'px'; el.style.top=cy+'px';
-  });
-  const onUp=e=>{if(e.pointerId!==pid)return;pid=-1;dragging=false;el.style.cursor='grab';};
-  el.addEventListener('pointerup',onUp);
-  el.addEventListener('pointercancel',onUp);
+  allButtons.push(createButton(canvasBg, {
+    elementId: 'generate-btn',
+    W: 220, H: 220, R: 28, label: 'Generate',
+    initX: cx - 110, initY: cy - 150,
+  }));
+
+  allButtons.push(createButton(canvasBg, {
+    elementId: 'home-btn',
+    W: 120, H: 48, R: 24, label: 'Home',
+    initX: cx - 60, initY: cy + 90,
+  }));
+
+  canvasBg.onload = () => {
+    allButtons.forEach(b => { b.buildDispMap(); b.render(); });
+  };
+  canvasBg.src = 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=2000&auto=format&fit=crop';
 }
